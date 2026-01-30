@@ -1112,8 +1112,14 @@ claude-integration-gui/
 │   │   │       └── route.ts          # NEW: batch stock data
 │   │   ├── analyze/
 │   │   │   └── route.ts              # NEW: deep analysis
-│   │   └── backtest/
-│   │       └── route.ts              # NEW: run backtest
+│   │   ├── backtest/
+│   │   │   └── route.ts              # NEW: run backtest
+│   │   └── nordnet/                  # ✅ IMPLEMENTED
+│   │       ├── status/route.ts       # API status check
+│   │       ├── auth/route.ts         # Authentication
+│   │       ├── accounts/route.ts     # Accounts list
+│   │       ├── positions/route.ts    # Portfolio positions
+│   │       └── instruments/route.ts  # Search instruments
 │   │
 │   ├── components/
 │   │   ├── PortfolioPanel.tsx        # NEW
@@ -1145,7 +1151,12 @@ claude-integration-gui/
 │   │   ├── patterns.ts               # NEW
 │   │   ├── backtester.ts             # NEW
 │   │   ├── portfolioAnalytics.ts     # NEW
-│   │   └── pushNotifications.ts      # NEW
+│   │   ├── pushNotifications.ts      # NEW
+│   │   └── nordnet/                  # ✅ IMPLEMENTED
+│   │       ├── index.ts              # Main export
+│   │       ├── client.ts             # API client
+│   │       ├── feed.ts               # Real-time WebSocket
+│   │       └── __tests__/            # Unit tests
 │   │
 │   ├── agents/
 │   │   ├── priceMonitor.ts           # NEW
@@ -1198,6 +1209,131 @@ claude-integration-gui/
 
 ---
 
+## MODULE 8: NORDNET BROKER INTEGRATION
+
+### Purpose
+Direct integration with Nordnet External API v2 for real portfolio data, live prices, and order management.
+
+### Why Nordnet?
+- User's primary broker (Sweden/Nordic)
+- Official API available (v2)
+- Real-time WebSocket feeds
+- Eliminates manual position entry
+
+### Implementation Status: ✅ IMPLEMENTED
+
+Files created:
+```
+app/types/nordnet.ts           # Type definitions
+app/lib/nordnet/client.ts      # API client with auth
+app/lib/nordnet/feed.ts        # Real-time WebSocket feed
+app/lib/nordnet/index.ts       # Main export
+app/api/nordnet/status/        # Status check endpoint
+app/api/nordnet/auth/          # Authentication endpoint
+app/api/nordnet/accounts/      # Accounts endpoint
+app/api/nordnet/positions/     # Positions endpoint
+app/api/nordnet/instruments/   # Instruments search
+docs/NORDNET_INTEGRATION.md    # Setup documentation
+.env.example                   # Environment template
+```
+
+### Authentication Flow
+
+```
+1. Generate ed25519 SSH key pair
+2. Upload PUBLIC key to Nordnet → receive API key
+3. Configure environment variables:
+   - NORDNET_API_KEY
+   - NORDNET_COUNTRY (se|no|dk|fi)
+   - NORDNET_PRIVATE_KEY_PATH
+
+4. Authentication:
+   POST /api/2/login/start { api_key }
+   → { challenge: "uuid" }
+   → Sign challenge with private key
+   POST /api/2/login/verify { api_key, signature }
+   → { session_key, expires_in: 1800 }
+```
+
+### Key Types
+
+```typescript
+interface NordnetPosition {
+  accno: number;
+  instrument: NordnetInstrument;
+  qty: number;
+  market_value: NordnetAmount;
+  acq_price: NordnetAmount;  // Cost basis
+}
+
+interface NordnetPriceData {
+  type: 'price';
+  data: {
+    m: number;      // market_id
+    i: string;      // identifier
+    bid: number;
+    ask: number;
+    last: number;
+    high: number;
+    low: number;
+    volume: number;
+  };
+}
+```
+
+### API Routes
+
+| Route | Method | Description |
+|-------|--------|-------------|
+| `/api/nordnet/status` | GET | Check API availability |
+| `/api/nordnet/auth` | POST | Authenticate |
+| `/api/nordnet/auth` | DELETE | Logout |
+| `/api/nordnet/accounts` | GET | List accounts |
+| `/api/nordnet/positions` | GET | Get portfolio positions |
+| `/api/nordnet/instruments` | GET | Search instruments |
+
+### Real-time Feed
+
+```typescript
+import { NordnetFeedClient, NORDNET_MARKETS } from './lib/nordnet';
+
+const feed = new NordnetFeedClient(session, 'public', {
+  onPrice: (price) => {
+    console.log(`${price.i}: ${price.last}`);
+  },
+});
+
+await feed.connect();
+feed.subscribePrice(NORDNET_MARKETS.STOCKHOLM_LARGE_CAP, '101');
+```
+
+### Integration with CTIS
+
+1. **Portfolio Panel**: Auto-sync positions from Nordnet
+2. **Memory Graph**: Link Nordnet positions to memory nodes
+3. **Price Monitor Agent**: Use Nordnet feed for Swedish stocks
+4. **Trade Journal**: Import executed trades from Nordnet
+
+### Configuration
+
+```bash
+# .env
+NORDNET_API_KEY=your-api-key
+NORDNET_COUNTRY=se
+NORDNET_PRIVATE_KEY_PATH=/path/to/key
+NORDNET_ENABLED=true
+```
+
+### Dependencies
+
+```json
+{
+  "ws": "^8.16.0"  // For server-side WebSocket
+}
+```
+
+---
+
 ## SUCCESS CRITERIA
 
 ### Functional Requirements
@@ -1212,6 +1348,10 @@ claude-integration-gui/
 - [ ] Portfolio analytics shows correlation matrix
 - [ ] Push notifications work on mobile
 - [ ] Works offline with cached data
+- [x] Nordnet API client with ed25519 authentication
+- [x] Nordnet positions sync to portfolio panel
+- [ ] Nordnet real-time feed integration
+- [ ] Nordnet order placement (optional)
 
 ### Intelligence Requirements
 - [ ] Claude references user's risk tolerance in recommendations
