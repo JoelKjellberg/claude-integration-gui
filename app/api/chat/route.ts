@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
+import { WorkflowMode } from '../../types/workflow';
+import { getSystemPrompt } from '../../config/systemPrompts';
 
 export async function POST(req: NextRequest) {
   try {
-    const { apiKey, model, messages } = await req.json();
+    const { apiKey, model, messages, mode } = await req.json();
 
     if (!apiKey || !model || !messages) {
       return NextResponse.json(
@@ -14,10 +16,18 @@ export async function POST(req: NextRequest) {
 
     const client = new Anthropic({ apiKey });
 
+    // Get mode-specific system prompt
+    const currentMode: WorkflowMode = mode || 'planning';
+    const systemPrompt = getSystemPrompt(currentMode);
+
     const stream = client.messages.stream({
       model,
-      max_tokens: 4096,
-      messages: messages.slice(-10),
+      max_tokens: 8192,
+      system: systemPrompt,
+      messages: messages.slice(-10).map((msg: { role: string; content: string }) => ({
+        role: msg.role as 'user' | 'assistant',
+        content: msg.content,
+      })),
     });
 
     const encoder = new TextEncoder();
